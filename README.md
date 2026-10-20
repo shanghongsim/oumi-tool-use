@@ -113,6 +113,35 @@ set -a; source ../.env; set +a
    ../.venv/bin/python cleanup_run.py <run-tag>    # delete that run's 16 implementations
    ```
 
+## Deploy a shared Lambda endpoint
+
+The laptop + Cloudflare tunnel flow above is the fastest way to experiment. For
+a shared development environment, deploy the included AWS SAM application from
+the repository root:
+
+```bash
+sam build --template-file tau2_retail/template.yaml
+sam deploy --guided \
+  --template-file tau2_retail/template.yaml \
+  --parameter-overrides EnvironmentName=development EndpointToken='<generate-a-secret>'
+```
+
+This builds a Lambda container image with the τ² commit pinned by this repo and
+creates a DynamoDB table with TTL cleanup. Configure `TOOL_SERVER_URL` with the
+stack's `ToolFunctionUrl` output. The endpoint routes used by
+`run_evaluation.py` work unchanged: `/runs/<run-tag>/tools/<tool-name>`.
+
+Before deployment, validate the state algorithm without AWS credentials:
+`../.venv/bin/python test_lambda_runtime.py` (from `tau2_retail/`).
+
+The deployed service deliberately stores **successful mutating tool calls**, not
+the complete τ² retail database. The retail database is approximately 2.8 MiB,
+which exceeds DynamoDB's 400 KiB item limit. On every call, Lambda starts from
+the bundled canonical database and replays the write log for that `(run, session)`.
+This preserves τ²'s deterministic behavior, keeps evaluation runs isolated, and
+uses `X-Oumi-Call-Id` to replay a completed mutating call rather than applying it
+twice after a retry.
+
 ## Scoring
 
 | Check | What it measures | Where |
